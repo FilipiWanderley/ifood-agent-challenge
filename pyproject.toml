@@ -1,0 +1,29 @@
+[project]
+name = "sabor-da-maria-agent"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Filipi Wanderley de Moraes Silva", email = "135230785+FilipiWanderley@users.noreply.github.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "openpyxl>=3.1.5",
+    "pydantic>=2.14.4",
+]
+
+[project.scripts]
+sabor-da-maria-agent = "sabor_da_maria_agent:main"
+
+[build-system]
+requires = ["uv_build>=0.11.21,<0.12.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "mypy>=2.4.1",
+    "pytest>=9.2.0",
+    "pytest-cov>=7.1.0",
+    "ruff>=0.17.5",
+    "types-openpyxl>=3.1.5.20261017",
+]
