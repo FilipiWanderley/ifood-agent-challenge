@@ -117,6 +117,43 @@ class PricingAnalysis(FrozenModel):
     platform_fee_rate: Decimal
     break_even_price: Decimal = Field(gt=0)
     scenarios: tuple[PricingScenario, ...]
+    cost_basis: Decimal = Field(gt=0)
+
+
+class DeliveryPricingReport(FrozenModel):
+    """Delivery pricing with an explicit cost basis.
+
+    ``per_portion`` prices one portion (the menu price) from
+    ``cmv_per_portion``. ``batch`` optionally prices the whole recipe
+    yield from ``total_cmv``. ``pending_cost_items`` lists ingredients
+    that are used but not yet quantified; they are never part of the CMV,
+    so any non-empty list marks the CMV, and every price, as partial.
+    """
+
+    recipe_name: str = Field(min_length=1)
+    servings: int = Field(gt=0)
+    total_cmv: Decimal = Field(gt=0)
+    cmv_per_portion: Decimal = Field(gt=0)
+    platform_fee_rate: Decimal
+    per_portion: PricingAnalysis
+    batch: PricingAnalysis | None = None
+    pending_cost_items: tuple[str, ...] = ()
+    cmv_complete: bool
+
+    @model_validator(mode="after")
+    def validate_consistency(self) -> "DeliveryPricingReport":
+        if self.cmv_complete == bool(self.pending_cost_items):
+            raise ValueError(
+                "cmv_complete must be False exactly when pending cost items exist."
+            )
+
+        if self.per_portion.cost_basis != self.cmv_per_portion:
+            raise ValueError("Per-portion pricing must use the CMV per portion.")
+
+        if self.batch is not None and self.batch.cost_basis != self.total_cmv:
+            raise ValueError("Batch pricing must use the total CMV.")
+
+        return self
 
 
 def _normalize_name(value: str) -> str:
@@ -408,7 +445,19 @@ class PricingPolicy(FrozenModel):
         return self
 
     def evaluate(self, recipe_cost: RecipeCost) -> PricingAnalysis:
-        cost = recipe_cost.total_cmv
+        """Price the whole recipe yield (batch) from its total CMV.
+
+        Kept for backward compatibility. When ``servings > 1`` the result
+        is a batch price, not a menu price; use ``DeliveryPricingCalculator``
+        to obtain explicit per-portion pricing.
+        """
+        return self.evaluate_cost(recipe_cost.total_cmv)
+
+    def evaluate_cost(self, cost: Decimal) -> PricingAnalysis:
+        """Price an arbitrary cost basis (one portion or one batch)."""
+        if not cost.is_finite() or cost <= 0:
+            raise CostingError("Pricing cost basis must be positive and finite.")
+
         available_share = Decimal(1) - self.platform_fee_rate
 
         break_even_price = (cost / available_share).quantize(
@@ -448,4 +497,74 @@ class PricingPolicy(FrozenModel):
             platform_fee_rate=self.platform_fee_rate,
             break_even_price=break_even_price,
             scenarios=tuple(scenarios),
+            cost_basis=cost,
         )
+
+
+class DeliveryPricingCalculator:
+    """Builds per-portion (and optional batch) delivery pricing.
+
+    The pricing math lives only in ``PricingPolicy.evaluate_cost``; this
+    class chooses the cost basis and labels CMV completeness.
+    """
+
+    def __init__(self, policy: PricingPolicy | None = None) -> None:
+        self._policy = policy if policy is not None else PricingPolicy()
+
+    @property
+    def policy(self) -> PricingPolicy:
+        return self._policy
+
+    def calculate(
+        self,
+        recipe_cost: RecipeCost,
+        *,
+        include_batch: bool = False,
+        pending_cost_items: Sequence[str] = (),
+    ) -> DeliveryPricingReport:
+        pending = _validate_pending_cost_items(recipe_cost, pending_cost_items)
+
+        return DeliveryPricingReport(
+            recipe_name=recipe_cost.recipe_name,
+            servings=recipe_cost.servings,
+            total_cmv=recipe_cost.total_cmv,
+            cmv_per_portion=recipe_cost.cmv_per_portion,
+            platform_fee_rate=self._policy.platform_fee_rate,
+            per_portion=self._policy.evaluate_cost(recipe_cost.cmv_per_portion),
+            batch=self._policy.evaluate(recipe_cost) if include_batch else None,
+            pending_cost_items=pending,
+            cmv_complete=not pending,
+        )
+
+
+def _validate_pending_cost_items(
+    recipe_cost: RecipeCost,
+    pending_cost_items: Sequence[str],
+) -> tuple[str, ...]:
+    if isinstance(pending_cost_items, str):
+        raise CostingError("Pending cost items must be a sequence of names.")
+
+    quantified = {_normalize_name(line.name) for line in recipe_cost.lines}
+    seen: set[str] = set()
+    pending: list[str] = []
+
+    for raw_name in pending_cost_items:
+        name = raw_name.strip()
+
+        if not name:
+            raise CostingError("Pending cost item names cannot be empty.")
+
+        key = _normalize_name(name)
+
+        if key in quantified:
+            raise CostingError(
+                f"Pending cost item {name!r} is already quantified in the CMV."
+            )
+
+        if key in seen:
+            raise CostingError(f"Duplicate pending cost item: {name!r}.")
+
+        seen.add(key)
+        pending.append(name)
+
+    return tuple(pending)
