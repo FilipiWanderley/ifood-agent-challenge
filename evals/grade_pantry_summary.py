@@ -18,7 +18,9 @@ EXPECTED_BUDGET = Decimal("80.00")
 def load_trace(path: Path) -> list[dict[str, Any]]:
     events: list[dict[str, Any]] = []
     payload = path.read_bytes()
-    encoding = "utf-16" if payload.startswith((b"\xff\xfe", b"\xfe\xff")) else "utf-8-sig"
+    encoding = (
+        "utf-16" if payload.startswith((b"\xff\xfe", b"\xfe\xff")) else "utf-8-sig"
+    )
     try:
         lines = payload.decode(encoding).splitlines()
     except UnicodeError as exc:
@@ -40,7 +42,11 @@ def load_trace(path: Path) -> list[dict[str, Any]]:
 def parse_summary(output: Any) -> dict[str, Any]:
     data = json.loads(output) if isinstance(output, str) else output
     if isinstance(data, dict) and "result" in data:
-        data = json.loads(data["result"]) if isinstance(data["result"], str) else data["result"]
+        data = (
+            json.loads(data["result"])
+            if isinstance(data["result"], str)
+            else data["result"]
+        )
     if not isinstance(data, dict):
         raise TypeError("MCP summary must be a JSON object")
     return data
@@ -57,7 +63,9 @@ def _brl_number(raw: str) -> Decimal:
 
 def grade(events: list[dict[str, Any]]) -> dict[str, Any]:
     errors: list[str] = []
-    tool_uses = [e for e in events if e.get("type") == "tool_use" and e.get("name") == TOOL]
+    tool_uses = [
+        e for e in events if e.get("type") == "tool_use" and e.get("name") == TOOL
+    ]
     tool_results = {
         e.get("tool_call_id"): e
         for e in events
@@ -87,8 +95,14 @@ def grade(events: list[dict[str, Any]]) -> dict[str, Any]:
             count = int(summary["ingredient_count"])
             history = Decimal(str(summary["historical_purchase_total_brl"]))
             budget = Decimal(str(summary["remaining_budget_brl"]))
-            if (count, history, budget) != (EXPECTED_COUNT, EXPECTED_HISTORY, EXPECTED_BUDGET):
-                errors.append("Pantry summary does not match baseline workbook financial values")
+            if (count, history, budget) != (
+                EXPECTED_COUNT,
+                EXPECTED_HISTORY,
+                EXPECTED_BUDGET,
+            ):
+                errors.append(
+                    "Pantry summary does not match baseline workbook financial values"
+                )
         except (KeyError, TypeError, ValueError, InvalidOperation) as exc:
             errors.append(f"Invalid pantry summary fields: {exc}")
 
@@ -102,7 +116,9 @@ def grade(events: list[dict[str, Any]]) -> dict[str, Any]:
         answer = str(final.get("text", ""))
         if not re.search(r"\b37\b", answer):
             errors.append("Final answer omitted the 37-ingredient count")
-        money_strings = re.findall(r"R\$\s*((?:\d{1,3}(?:\.\d{3})+|\d+),\d{2}|\d+\.\d{2})", answer)
+        money_strings = re.findall(
+            r"R\$\s*((?:\d{1,3}(?:\.\d{3})+|\d+),\d{2}|\d+\.\d{2})", answer
+        )
         money_values = {_brl_number(value) for value in money_strings}
         if money_values != {EXPECTED_HISTORY, EXPECTED_BUDGET}:
             errors.append("Final answer BRL amounts do not match MCP summary")
@@ -125,7 +141,11 @@ def main() -> int:
     try:
         report = grade(load_trace(args.trace))
     except (OSError, ValueError) as exc:
-        report = {"passed": False, "scenario": "pantry_summary_smoke", "errors": [str(exc)]}
+        report = {
+            "passed": False,
+            "scenario": "pantry_summary_smoke",
+            "errors": [str(exc)],
+        }
     print(json.dumps(report, indent=2, ensure_ascii=False))
     return 0 if report["passed"] else 1
 

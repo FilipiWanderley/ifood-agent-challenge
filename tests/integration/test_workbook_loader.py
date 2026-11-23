@@ -22,10 +22,9 @@ def create_workbook(
     workbook = Workbook()
 
     stock_sheet = workbook.active
+    assert stock_sheet is not None
     stock_sheet.title = "Despensa"
-    stock_sheet.append(
-        ["Ingrediente", "Quantidade em estoque", "Unidade"]
-    )
+    stock_sheet.append(["Ingrediente", "Quantidade em estoque", "Unidade"])
 
     for row in stock_rows:
         stock_sheet.append(list(row))
@@ -58,10 +57,7 @@ def test_loads_real_challenge_workbook() -> None:
 def test_calculates_package_costs_using_base_units() -> None:
     catalog = PantryWorkbookLoader().load(REAL_WORKBOOK)
 
-    ingredients = {
-        ingredient.name: ingredient
-        for ingredient in catalog.ingredients
-    }
+    ingredients = {ingredient.name: ingredient for ingredient in catalog.ingredients}
 
     alcaparras = ingredients["Alcaparras"]
     chantilly = ingredients["Chantilly"]

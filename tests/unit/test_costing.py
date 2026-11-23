@@ -304,13 +304,9 @@ def test_generates_break_even_and_three_pricing_scenarios() -> None:
     assert analysis.scenarios[1].estimated_profit == Decimal("3.465")
 
     for scenario in analysis.scenarios:
-        assert scenario.platform_fee == (
-            scenario.selling_price * Decimal("0.10")
-        )
+        assert scenario.platform_fee == (scenario.selling_price * Decimal("0.10"))
 
-        assert scenario.net_revenue == (
-            scenario.selling_price * Decimal("0.90")
-        )
+        assert scenario.net_revenue == (scenario.selling_price * Decimal("0.90"))
 
         assert scenario.estimated_profit == (
             scenario.net_revenue - recipe_cost.total_cmv
@@ -355,5 +351,6 @@ def test_rejects_non_integer_servings() -> None:
                 )
             ],
             catalog=catalog,
-            servings=1.5,
+            # Deliberately test runtime rejection of an invalid value.
+            servings=1.5,  # type: ignore[arg-type]
         )

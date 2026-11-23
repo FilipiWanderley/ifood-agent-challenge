@@ -9,9 +9,9 @@ class IngredientCost(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     name: str = Field(min_length=1)
-    stock_quantity: Decimal = Field(gt=0)
+    stock_quantity: Decimal = Field(ge=0)
     stock_unit: str = Field(min_length=1)
-    stock_base_quantity: Decimal = Field(gt=0)
+    stock_base_quantity: Decimal = Field(ge=0)
     purchase_quantity: Decimal = Field(gt=0)
     purchase_unit: str = Field(min_length=1)
     purchase_base_quantity: Decimal = Field(gt=0)

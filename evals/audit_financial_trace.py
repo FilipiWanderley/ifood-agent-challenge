@@ -246,9 +246,12 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("trace", type=Path)
     args = parser.parse_args()
-    try:
-        from fastmcp.exceptions import ToolError
+    # Imported outside the try block: the except clause below references
+    # ToolError, so a failed import must surface as itself, not as an
+    # UnboundLocalError raised while matching the except tuple.
+    from fastmcp.exceptions import ToolError
 
+    try:
         events = load_events(args.trace)
         cost_args = extract_call(events, COST_TOOL)
         pricing_args = extract_call(events, PRICING_TOOL)
