@@ -1,0 +1,49 @@
+name: Sabor da Maria CI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Quality Gates - Python 3.12
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version-file: .python-version
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
+        with:
+          enable-cache: true
+
+      - name: Install locked dependencies
+        run: uv sync --locked --all-groups
+
+      - name: Ruff
+        run: uv run --locked ruff check src tests evals
+
+      - name: Mypy
+        run: uv run --locked mypy src
+
+      - name: Unit, Integration, Contract and Evaluation Tests
+        run: uv run --locked pytest tests/unit tests/integration tests/evaluation tests/contract -q
