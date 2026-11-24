@@ -195,9 +195,3 @@ hermes
 If the MCP name is **already configured**, inspect it with `hermes mcp list` and `hermes mcp test sabor-da-maria` rather than adding it again. The `.venv` path is local to each clone; reconfigure an existing Hermes MCP entry after moving the repository. Hermes/model installation and provider authentication are environment-level prerequisites, not bundled credentials.
 
 The included `scripts/check-delivery.ps1` checks the same source tree and local MCP environment; it does not install Hermes or change configuration. Its initial workbook check reports whether the challenge data is available. CI's passing Python tests do not, by themselves, prove a new computer has Hermes configured or access to the workbook.
-
-### Demonstration evidence and known boundaries
-
-The supervised demonstration progressed through: missing information -> infeasible kitchen -> revised kitchen -> awaiting explicit approval -> approved with a version-bound decision -> priced. The final test scenario used **fictitious** equipment/storage/temperature confirmations, 15 portions, 3 adapted batches, R$ 37.66 in supplemental *package purchases*, R$ 64.05 in ingredient CMV for all portions, and the illustrative 25% scenario at R$ 6.57 per portion (10% platform fee). These are technical test results, **not** commercial sales prices or proof of food safety. All numbers must be re-run against the workbook and candidate state in the review environment.
-
-The financial engine includes consumed ingredients, not packaging, labour, energy, taxes, delivery logistics or other operating expenses. A complete `cmv_complete` means complete **ingredient** CMV, not complete unit economics. A separate, real-world food safety process and verified supplier prices would be needed before live production. See [demo walkthrough](docs/demo/VIDEO_GUIDE.md).
