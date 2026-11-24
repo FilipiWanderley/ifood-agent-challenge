@@ -133,3 +133,71 @@ uv run python evals/audit_financial_trace.py "$env:TEMP\ifood-sabor-maria-evals\
 - Refrigerator/freezer availability and free-capacity checks
 - Persisted planning workflow with approval-gated CMV and pricing
 - Automated tests and an offline financial trace audit
+
+## Architecture choices required by the challenge
+
+### Model selection and conversational reasoning
+
+The demo was run with Hermes Agent and the `claude-opus-5-5` model through the Anthropic provider. The model is **replaceable**: it researches recipe candidates with `web_search`, asks Dona Maria for missing facts, translates her answers into validated tool inputs and explains the findings. It does **not** decide mathematical feasibility or perform production financial arithmetic on its own. Provider credentials and Hermes user-level settings are intentionally not checked into Git.
+
+The deliberate trade-off is to use a strong general-purpose LLM for flexible dialogue while making critical decisions reproducible in Python, independently of model sampling. A model change may affect conversation quality and tool selection, but should not change the calculation semantics of a given validated tool call.
+
+### Context files and skills
+
+- `docs/requirements/desafio-senior-ai-engineer.md` is the preserved assignment and acceptance criteria.
+- `.hermes/skills/dona-maria-consultora/SKILL.md` is the project-local Hermes skill: conversational instructions, discovery questions, tool calling rules, explicit human approval, source attribution and limits of the financial model.
+- `README.md`, `docs/architecture/` and `docs/decisions/` explain reproducibility, separation of responsibilities and implementation trade-offs for reviewers. These files are documentation, **not** a hidden database of kitchen facts.
+- The workbook `data/raw/despensa_dona_maria.xlsx` is the source of truth for pantry quantities and historical ingredient costs. Its two sheets are read by the Python loader, not reinterpreted from free-form model memory.
+
+### Tools and MCP boundary
+
+Hermes uses web search for recipe discovery and supplemental supplier quotes. The local FastMCP server named `sabor-da-maria` exposes 11 domain tools, including pantry inspection, kitchen profile management, recipe evaluation, explicit approval and approved-only calculation. The Python domain/application layers validate amounts, units, available equipment and skills, whole-batch production, remaining inventory, supplementary package purchases and the R$ 80 shared session budget. SQLite keeps the authoritative state transitions.
+
+The read-only compatibility tools `calculate_recipe_cost` and `calculate_delivery_pricing` remain for historical contract/evaluation use; the **official stateful journey** requires `approve_recipe_candidate` before `calculate_approved_recipe`. This distinction is intentional and documented in the workflow section above.
+
+### Memory and state management
+
+- **Conversational memory:** Hermes's own conversation context is used to elicit answers and provide explanations. It is not treated as proof of an approved recipe or available stock.
+- **Operational memory:** SQLite persists planning sessions, candidate versions, recipe/kitchen facts, evaluation snapshots, confirmation of batches, approval events and pricing results. `get_planning_status` retrieves the authoritative state even if the agent conversation changes.
+- **Approval integrity:** explicit user words, approved candidate version and an input fingerprint are recorded; a changed kitchen, recipe, pantry or quote invalidates stale approval. Previous approved recipes reserve workbook inventory within their session. Different sessions are isolated.
+- **Scope:** a transcript is not a replacement for authenticated user identity. Chosen selling-price scenarios are returned to the user but there is currently no official persistence field for the final commercial selection.
+
+### Reproducing on a clean Windows machine
+
+Prerequisites: Git, Python 3.12, `uv`, a separately installed Hermes Agent CLI, a configured provider/model for web search, and the challenge workbook. Do **not** commit API tokens, provider configuration or local SQLite databases.
+
+```powershell
+# From a fresh directory:
+git clone https://github.com/FilipiWanderley/ifood-agent-challenge.git
+Set-Location ifood-agent-challenge
+# For reviewers of the proposed changes, check out the feature branch/PR first:
+git checkout feat/recipe-domain-model
+uv sync --locked --all-groups
+
+# The original challenge workbook must exist at this exact location, or set
+# SABOR_DA_MARIA_WORKBOOK to an absolute path to your copy of it.
+Test-Path '.\data\raw\despensa_dona_maria.xlsx'
+
+# Register the repository's installed console entry point with Hermes.
+# Run once per Hermes user profile, not once per agent session.
+$serverExe = (Resolve-Path '.\.venv\Scripts\sabor-da-maria-agent.exe').Path
+hermes mcp add sabor-da-maria --command "$serverExe" --connect-timeout 60
+hermes mcp test sabor-da-maria
+
+uv run --locked ruff check src tests evals
+uv run --locked ruff format --check src tests evals
+uv run --locked mypy src
+uv run --locked pyright
+uv run --locked pytest tests/unit tests/integration tests/evaluation tests/contract -q
+hermes
+```
+
+If the MCP name is **already configured**, inspect it with `hermes mcp list` and `hermes mcp test sabor-da-maria` rather than adding it again. The `.venv` path is local to each clone; reconfigure an existing Hermes MCP entry after moving the repository. Hermes/model installation and provider authentication are environment-level prerequisites, not bundled credentials.
+
+The included `scripts/check-delivery.ps1` checks the same source tree and local MCP environment; it does not install Hermes or change configuration. Its initial workbook check reports whether the challenge data is available. CI's passing Python tests do not, by themselves, prove a new computer has Hermes configured or access to the workbook.
+
+### Demonstration evidence and known boundaries
+
+The supervised demonstration progressed through: missing information -> infeasible kitchen -> revised kitchen -> awaiting explicit approval -> approved with a version-bound decision -> priced. The final test scenario used **fictitious** equipment/storage/temperature confirmations, 15 portions, 3 adapted batches, R$ 37.66 in supplemental *package purchases*, R$ 64.05 in ingredient CMV for all portions, and the illustrative 25% scenario at R$ 6.57 per portion (10% platform fee). These are technical test results, **not** commercial sales prices or proof of food safety. All numbers must be re-run against the workbook and candidate state in the review environment.
+
+The financial engine includes consumed ingredients, not packaging, labour, energy, taxes, delivery logistics or other operating expenses. A complete `cmv_complete` means complete **ingredient** CMV, not complete unit economics. A separate, real-world food safety process and verified supplier prices would be needed before live production. See [demo walkthrough](docs/demo/VIDEO_GUIDE.md).
