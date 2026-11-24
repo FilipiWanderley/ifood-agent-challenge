@@ -173,8 +173,6 @@ def _normalize_measure(
         ) from exc
 
 
-
-
 class RecipeCostCalculator:
     def calculate(
         self,

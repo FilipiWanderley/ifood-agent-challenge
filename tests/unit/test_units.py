@@ -9,7 +9,13 @@ from sabor_da_maria_agent.domain.units import (
 
 
 @pytest.mark.parametrize(
-    ("quantity", "unit_label", "expected_quantity", "expected_unit", "expected_dimension"),
+    (
+        "quantity",
+        "unit_label",
+        "expected_quantity",
+        "expected_unit",
+        "expected_dimension",
+    ),
     [
         (Decimal(5), "kg", Decimal(5000), "g", MeasureDimension.MASS),
         (Decimal("0.5"), "kg", Decimal(500), "g", MeasureDimension.MASS),

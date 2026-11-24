@@ -71,9 +71,7 @@ class PantryWorkbookLoader:
                 data_only=True,
             )
         except (InvalidFileException, BadZipFile, OSError, ValueError) as exc:
-            raise WorkbookSchemaError(
-                f"Unable to read workbook: {path}"
-            ) from exc
+            raise WorkbookSchemaError(f"Unable to read workbook: {path}") from exc
 
         try:
             required_sheets = {"Despensa", "Precos"}
@@ -84,12 +82,8 @@ class PantryWorkbookLoader:
                     f"Missing worksheets: {sorted(missing_sheets)}"
                 )
 
-            stock_records = self._read_stock_sheet(
-                workbook["Despensa"]
-            )
-            purchase_records = self._read_purchase_sheet(
-                workbook["Precos"]
-            )
+            stock_records = self._read_stock_sheet(workbook["Despensa"])
+            purchase_records = self._read_purchase_sheet(workbook["Precos"])
 
             if not stock_records:
                 raise WorkbookSchemaError("The pantry worksheet is empty.")
@@ -111,10 +105,7 @@ class PantryWorkbookLoader:
             )
 
             historical_purchase_total = sum(
-                (
-                    record.total_paid
-                    for record in purchase_records.values()
-                ),
+                (record.total_paid for record in purchase_records.values()),
                 start=Decimal(0),
             )
 
@@ -231,14 +222,9 @@ class PantryWorkbookLoader:
         )
 
         if header is None:
-            raise WorkbookSchemaError(
-                f"Worksheet {sheet.title!r} has no header."
-            )
+            raise WorkbookSchemaError(f"Worksheet {sheet.title!r} has no header.")
 
-        headers = tuple(
-            self._normalize_header(value)
-            for value in header
-        )
+        headers = tuple(self._normalize_header(value) for value in header)
 
         while headers and not headers[-1]:
             headers = headers[:-1]
@@ -262,19 +248,16 @@ class PantryWorkbookLoader:
             values = tuple(row)
 
             if len(values) < len(expected_headers):
-                values += (None,) * (
-                    len(expected_headers) - len(values)
-                )
+                values += (None,) * (len(expected_headers) - len(values))
 
             if any(
-                not self._is_empty(value)
-                for value in values[len(expected_headers):]
+                not self._is_empty(value) for value in values[len(expected_headers) :]
             ):
                 raise WorkbookSchemaError(
                     f"Unexpected columns in {sheet.title!r}, row {row_number}."
                 )
 
-            yield row_number, values[:len(expected_headers)]
+            yield row_number, values[: len(expected_headers)]
 
     def _build_ingredient(
         self,
@@ -302,13 +285,9 @@ class PantryWorkbookLoader:
             )
 
         if stock_measure.unit != purchase_measure.unit:
-            raise WorkbookSchemaError(
-                f"Base unit mismatch for {stock.name!r}."
-            )
+            raise WorkbookSchemaError(f"Base unit mismatch for {stock.name!r}.")
 
-        unit_cost = (
-            purchase.total_paid / purchase_measure.quantity
-        )
+        unit_cost = purchase.total_paid / purchase_measure.quantity
 
         return IngredientCost(
             name=stock.name,
@@ -344,9 +323,7 @@ class PantryWorkbookLoader:
 
     @staticmethod
     def _ingredient_key(value: str) -> str:
-        return " ".join(
-            normalize("NFKC", value).casefold().split()
-        )
+        return " ".join(normalize("NFKC", value).casefold().split())
 
     @staticmethod
     def _normalize_header(value: Any) -> str:
@@ -356,9 +333,7 @@ class PantryWorkbookLoader:
 
     @staticmethod
     def _is_empty(value: Any) -> bool:
-        return value is None or (
-            isinstance(value, str) and not value.strip()
-        )
+        return value is None or (isinstance(value, str) and not value.strip())
 
     @staticmethod
     def _required_text(
@@ -387,9 +362,7 @@ class PantryWorkbookLoader:
             )
 
         raw_value = (
-            value.strip().replace(",", ".")
-            if isinstance(value, str)
-            else str(value)
+            value.strip().replace(",", ".") if isinstance(value, str) else str(value)
         )
 
         try:

@@ -45,5 +45,8 @@ jobs:
       - name: Mypy
         run: uv run --locked mypy src
 
+      - name: Pyright
+        run: uv run --locked pyright
+
       - name: Unit, Integration, Contract and Evaluation Tests
         run: uv run --locked pytest tests/unit tests/integration tests/evaluation tests/contract -q

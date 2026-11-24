@@ -19,8 +19,20 @@ def events():
     }
     return [
         {"type": "tool_use", "name": mod.TOOL, "tool_call_id": "call1", "input": {}},
-        {"type": "tool_result", "name": mod.TOOL, "tool_call_id": "call1", "output": json.dumps({"result": json.dumps(data)}), "is_error": False},
-        {"type": "result", "exit_code": 0, "text": "37 ingredients, historical R$ 663,39, remaining R$ 80,00.", "duration_ms": 120, "tokens": {"total": 250}},
+        {
+            "type": "tool_result",
+            "name": mod.TOOL,
+            "tool_call_id": "call1",
+            "output": json.dumps({"result": json.dumps(data)}),
+            "is_error": False,
+        },
+        {
+            "type": "result",
+            "exit_code": 0,
+            "text": "37 ingredients, historical R$ 663,39, remaining R$ 80,00.",
+            "duration_ms": 120,
+            "tokens": {"total": 250},
+        },
     ]
 
 
@@ -46,7 +58,17 @@ def test_tool_error():
 
 def test_wrong_financial_value():
     trace = events()
-    trace[1]["output"] = json.dumps({"result": json.dumps({"ingredient_count": 37, "historical_purchase_total_brl": "663.39", "remaining_budget_brl": "90.00"})})
+    trace[1]["output"] = json.dumps(
+        {
+            "result": json.dumps(
+                {
+                    "ingredient_count": 37,
+                    "historical_purchase_total_brl": "663.39",
+                    "remaining_budget_brl": "90.00",
+                }
+            )
+        }
+    )
     assert not mod.grade(trace)["passed"]
 
 
@@ -64,19 +86,24 @@ def test_bad_exit_code():
 
 def test_load_trace_ignores_session_status_lines(tmp_path):
     path = tmp_path / "trace.jsonl"
-    path.write_text('Session: local-test\n' + '\n'.join(json.dumps(e) for e in events()) + '\nsession_id: local-test\n', encoding="utf-8")
+    path.write_text(
+        "Session: local-test\n"
+        + "\n".join(json.dumps(e) for e in events())
+        + "\nsession_id: local-test\n",
+        encoding="utf-8",
+    )
     assert len(mod.load_trace(path)) == 3
 
 
 def test_load_trace_rejects_corrupt_json(tmp_path):
     path = tmp_path / "trace.jsonl"
-    path.write_text('not-json\n', encoding="utf-8")
+    path.write_text("not-json\n", encoding="utf-8")
     try:
         mod.load_trace(path)
     except ValueError as exc:
-        assert 'Invalid JSONL' in str(exc)
+        assert "Invalid JSONL" in str(exc)
     else:
-        raise AssertionError('Expected ValueError')
+        raise AssertionError("Expected ValueError")
 
 
 def test_load_trace_accepts_windows_powershell_utf16(tmp_path):

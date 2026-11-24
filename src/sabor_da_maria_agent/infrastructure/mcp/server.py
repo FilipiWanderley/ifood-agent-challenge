@@ -1,4 +1,4 @@
-﻿import os
+import os
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -16,12 +16,13 @@ from sabor_da_maria_agent.domain.pantry import PantryCatalog
 from sabor_da_maria_agent.infrastructure.excel.workbook_loader import (
     PantryWorkbookLoader,
 )
+from sabor_da_maria_agent.infrastructure.mcp.workflow_tools import (
+    register_workflow_tools,
+)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[4]
 
-DEFAULT_WORKBOOK = (
-    PROJECT_ROOT / "data" / "raw" / "despensa_dona_maria.xlsx"
-)
+DEFAULT_WORKBOOK = PROJECT_ROOT / "data" / "raw" / "despensa_dona_maria.xlsx"
 
 
 def _workbook_path() -> Path:
@@ -134,7 +135,13 @@ mcp = FastMCP(
         "Servidor de dominio para consulta de despensa, "
         "calculo deterministico de CMV e precificacao de delivery. "
         "Utilize as ferramentas para obter resultados reais. "
-        "Nao invente estoque, precos ou cotacoes."
+        "Nao invente estoque, precos ou cotacoes. "
+        "Fluxo oficial: start_planning_session, update_kitchen_profile, "
+        "register_recipe_candidate, evaluate_recipe_candidate, "
+        "approve_recipe_candidate, calculate_approved_recipe, "
+        "get_planning_status. calculate_recipe_cost e "
+        "calculate_delivery_pricing sao interfaces de compatibilidade "
+        "(auditoria historica) e nao verificam aprovacao."
     ),
 )
 
@@ -165,9 +172,7 @@ def get_pantry_inventory() -> dict[str, Any]:
     return {
         "workbook": _workbook_path().name,
         "ingredient_count": len(ingredients),
-        "historical_purchase_total_brl": str(
-            catalog.historical_purchase_total
-        ),
+        "historical_purchase_total_brl": str(catalog.historical_purchase_total),
         "remaining_budget_brl": str(catalog.remaining_budget),
         "ingredients": ingredients,
     }
@@ -181,9 +186,7 @@ def get_pantry_summary() -> dict[str, Any]:
 
     return {
         "ingredient_count": len(catalog.ingredients),
-        "historical_purchase_total_brl": str(
-            catalog.historical_purchase_total
-        ),
+        "historical_purchase_total_brl": str(catalog.historical_purchase_total),
         "remaining_budget_brl": str(catalog.remaining_budget),
         "workbook": _workbook_path().name,
     }
@@ -199,6 +202,10 @@ def calculate_recipe_cost(
     """
     Calcula CMV usando estoque real, unidades normalizadas
     e cotacoes verificaveis para compras complementares.
+
+    INTERFACE DE COMPATIBILIDADE (auditoria historica): nao verifica
+    viabilidade nem aprovacao. No fluxo conversacional oficial use
+    evaluate_recipe_candidate e calculate_approved_recipe.
 
     requirements:
       [{"name": "Farinha", "quantity": "200", "unit": "g"}]
@@ -224,9 +231,7 @@ def calculate_recipe_cost(
         "recipe_cost": result.model_dump(mode="json"),
         "total_cmv_brl": str(result.total_cmv),
         "cmv_per_portion_brl": str(result.cmv_per_portion),
-        "supplemental_purchase_total_brl": str(
-            result.supplemental_purchase_total
-        ),
+        "supplemental_purchase_total_brl": str(result.supplemental_purchase_total),
         "budget_limit_brl": str(result.budget_limit),
         "budget_remaining_after_purchase_brl": str(
             result.budget_remaining_after_purchase
@@ -247,6 +252,10 @@ def calculate_delivery_pricing(
     """
     Calcula CMV e precificacao de delivery com taxa de 10 por cento,
     com base de custo explicita.
+
+    INTERFACE DE COMPATIBILIDADE (auditoria historica): nao verifica
+    aprovacao. No fluxo conversacional oficial use
+    calculate_approved_recipe.
 
     Parametros adicionais (opcionais, compativeis com chamadas antigas):
       include_batch_pricing: true para incluir os cenarios do lote
@@ -292,9 +301,7 @@ def calculate_delivery_pricing(
         "servings": report.servings,
         "total_cmv_brl": str(report.total_cmv),
         "cmv_per_portion_brl": str(report.cmv_per_portion),
-        "break_even_price_per_portion_brl": str(
-            report.per_portion.break_even_price
-        ),
+        "break_even_price_per_portion_brl": str(report.per_portion.break_even_price),
         "cmv_complete": report.cmv_complete,
         "pending_cost_items": list(report.pending_cost_items),
         "delivery_pricing": report.model_dump(mode="json"),
@@ -303,6 +310,9 @@ def calculate_delivery_pricing(
         "break_even_price_brl": str(legacy_pricing.break_even_price),
         "currency": "BRL",
     }
+
+
+register_workflow_tools(mcp, _load_catalog)
 
 
 if __name__ == "__main__":

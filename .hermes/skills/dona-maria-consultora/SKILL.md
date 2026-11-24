@@ -1,7 +1,7 @@
 ---
 name: dona-maria-consultora
 description: Pesquisa receitas, valida produção e calcula CMV e preços.
-version: 2.2.0
+version: 3.1.0
 platforms: [windows]
 ---
 
@@ -51,6 +51,110 @@ Quando Dona Maria solicitar ajuda generica para criar o cardapio:
 Objetivo: orientar a cliente de maneira segura, realista,
 financeiramente verificavel e operacionalmente viavel.
 
+<!-- workflow-v1 -->
+
+## FLUXO OFICIAL PERSISTIDO (obrigatorio)
+
+O servidor MCP impoe a ordem do fluxo com uma maquina de estados
+persistida em SQLite. Esta e a UNICA forma oficial de levar um prato
+ate CMV e preco:
+
+1. start_planning_session (uma vez por consultoria). Guarde session_id
+   e session_version. Se ja existir sessao, use get_planning_status.
+2. update_kitchen_profile sempre que Dona Maria informar equipamentos,
+   se a lista de equipamentos esta completa, habilidades, tempo diario,
+   porcoes por dia, pessoas, gas, energia, agua, disponibilidade de geladeira
+   ou freezer e espaco LIVRE em litros. Envie somente fatos confirmados.
+   Use equipment_inventory_complete=true somente se ela confirmar que a
+   lista de equipamentos e exaustiva; caso contrario omita ou use false.
+   Use skills_inventory_complete=true somente quando Dona Maria disser que a
+   lista de habilidades e completa; habilidade ausente de lista parcial e
+   desconhecida (pergunte), nao uma incapacidade confirmada.
+   Pergunte tambem quantas pessoas estao disponiveis, mesmo que a receita
+   exija somente uma. Nao assuma que uma pessoa esta disponivel.
+   Disponibilidade ausente/null significa desconhecido, nao indisponivel.
+   Toda atualizacao invalida avaliacoes e aprovacoes anteriores.
+3. register_recipe_candidate para cada receita encontrada com
+   web_search:
+   - sources: title, url e excerpt exatamente como vieram do
+     web_search, e retrieved_at quando houver. Ficam marcados como
+     unverified_search_result. Use manual_review somente quando a pessoa
+     realmente abriu e leu a pagina; isso registra uma declaracao, nao uma
+     verificacao automatica nem autenticada pelo servidor.
+   - Use os nomes exatos da despensa (get_pantry_inventory).
+     Quantidades e valores vao como string.
+   - required_equipment, required_skills, required_utilities e
+     storage_requirements: omita quando nao souber; use [] somente quando
+     confirmado que nao ha requisito. Para armazenamento, informe refrigerator
+     ou freezer e volume livre exigido por lote em litros somente quando
+     conhecido; nunca derive litros a partir de porcoes.
+   - minimum_people: omita quando a fonte nao informar; nunca assuma 1.
+   - total_time_minutes e o tempo da receita-fonte para UM lote, nao para a
+     producao diaria inteira.
+   - supplemental_quotes: somente cotacoes reais, com URL http(s).
+   - production_confirmation: informe somente depois de Dona Maria confirmar
+     explicitamente o numero de lotes e, para multiplos lotes, o tempo TOTAL
+     de producao. Estrutura: {confirmed_batch_count, production_minutes?,
+     user_confirmation}. Antes de enviar, apresente o rendimento original,
+     a meta diaria, o total produzido e o excedente. O servidor vincula a
+     confirmacao a ESSE rendimento e a ESSA meta, mesmo se o numero de lotes
+     continuar igual apos uma alteracao. Se a meta mudar, confirme de novo.
+     Nunca multiplique o tempo de um lote pelo numero de lotes nem aceite
+     excedente de porcoes sem confirmacao.
+   - allow_partial_cmv=true somente se Dona Maria aceitar
+     explicitamente ingredientes sem quantidade (ex.: sal a gosto).
+   - Para alterar a receita ou as cotacoes, chame novamente com
+     candidate_id e expected_candidate_version. Isso invalida a
+     aprovacao.
+4. evaluate_recipe_candidate. Resultados possiveis:
+   - needs_information: pergunte a Dona Maria os itens de
+     missing_information. Nunca preencha por suposicao. Se houver
+     production_surplus_unconfirmed ou multi_batch_duration_unconfirmed,
+     explique o rendimento original, numero de lotes, total produzido,
+     excedente e solicite confirmacao. Depois revise o mesmo candidato com
+     register_recipe_candidate (candidate_id + expected_candidate_version),
+     enviando production_confirmation, e avalie novamente.
+   - infeasible: explique os blockers e nao recomende compras.
+   - awaiting_approval: apresente evaluation.pantry (o que ela tem e o
+     que falta), evaluation.purchase_plan (compras, total e saldo do
+     orcamento compartilhado de R$ 80) e as fontes.
+5. approve_recipe_candidate somente depois de um "sim" EXPLICITO da
+   Dona Maria nesta conversa, citando a fala dela em user_confirmation
+   e usando o candidate_version retornado em awaiting_approval. Se ela
+   recusar, use decision="reject". Nunca aprove em nome dela, por
+   inferencia ou por entusiasmo vago.
+6. calculate_approved_recipe com o candidate_version do candidato
+   aprovado. Apresente calculation.delivery_pricing.per_portion
+   (3 cenarios), o preco de equilibrio por porcao, cmv_complete,
+   pending_cost_items e excluded_costs (embalagem, gas, energia, mao de
+   obra e impostos nao entram no CMV). Dona Maria escolhe o preco.
+
+Restricoes:
+- Se uma ferramenta responder "Stale ... version", "Invalid transition"
+  ou "explicit approval", NAO contorne. Chame get_planning_status,
+  explique o estado real e siga o passo indicado em next_action.
+- Nunca use calculate_recipe_cost ou calculate_delivery_pricing para
+  apresentar CMV ou preco final de um prato da consultoria. Essas
+  ferramentas sao interfaces de compatibilidade (auditoria historica)
+  e nao verificam viabilidade nem aprovacao.
+- O orcamento de R$ 80 e compartilhado entre os pratos aprovados da
+  sessao. O servidor ja desconta as compras aprovadas de outros
+  candidatos. O estoque da despensa TAMBEM e reservado para receitas ja
+  aprovadas na mesma sessao. Nunca proponha duas receitas contando duas
+  vezes com o mesmo ingrediente. Compras para um prato nao viram estoque
+  compartilhado automaticamente.
+- Se o arquivo de despensa ou uma reserva mudar entre avaliar e aprovar,
+  o servidor invalida a avaliacao; reavalie e peca novo aceite antes do CMV.
+- O ProductionPlan e a unica base para comparacao da despensa, compras,
+  orcamento e CMV. Todas as quantidades devem refletir todos os lotes.
+  Nunca verifique estoque de um lote e apresente dois lotes como producao.
+- A capacidade de geladeira/freezer e espaco livre informado em litros.
+  O motor nao avalia temperatura, resfriamento, validade ou seguranca
+  alimentar; quando o volume combinado nao couber, esclareca o plano com
+  Dona Maria em vez de assumir armazenamento.
+- O estado sobrevive a reinicios do servidor. Retome com
+  get_planning_status em vez de recomecar.
+
 ## 1. Arquitetura operacional
 
 A integração MCP com o servidor sabor-da-maria está implementada e é o caminho principal para dados e cálculos.
@@ -61,8 +165,8 @@ Ordem de prioridade:
 
 Responsabilidades:
 - Despensa, estoque e orçamento: get_pantry_inventory e get_pantry_summary.
-- CMV, aproveitamento do estoque e compras complementares: calculate_recipe_cost.
-- Cenários de preço por porção (e, opcionalmente, do lote) com taxa de delivery de 10%: calculate_delivery_pricing.
+- Fluxo oficial (viabilidade, faltantes, cotações, orçamento, aprovação, CMV e preço): ferramentas do FLUXO OFICIAL PERSISTIDO acima.
+- Compatibilidade apenas (auditoria histórica; não verificam aprovação): calculate_recipe_cost e calculate_delivery_pricing.
 - LLM: pesquisar receitas, conversar com Dona Maria, montar os parâmetros das ferramentas e explicar os resultados.
 
 O LLM nunca reproduz manualmente a lógica financeira que já existe no código Python (custos unitários, conversões de unidade, pacotes, CMV, orçamento, preços, margens). Todo número financeiro apresentado deve vir de uma execução real de ferramenta.
@@ -71,7 +175,7 @@ O LLM nunca reproduz manualmente a lógica financeira que já existe no código 
 
 No Hermes, as ferramentas aparecem como mcp__sabor_da_maria__<nome>. Se não estiverem carregadas, localizar com tool_search e obter o schema com tool_describe antes de chamar.
 
-Todos os valores numéricos de entrada são enviados como string (ex.: "200", "12.50"), para preservar a precisão Decimal.
+Valores decimais de quantidades, capacidades, preços e dinheiro devem ser enviados como string (ex.: "200", "12.50") para preservar a precisão Decimal. Contagens, versões, tempos em minutos e flags devem respeitar os tipos do schema (integer/boolean), não devem ser convertidos em string.
 
 ### get_pantry_inventory
 
@@ -87,7 +191,13 @@ Parâmetros: nenhum.
 Retorno: ingredient_count, historical_purchase_total_brl, remaining_budget_brl e workbook.
 Uso: confirmar a quantidade de ingredientes, o total histórico de compras e o orçamento restante (inicialmente R$ 80,00).
 
-### calculate_recipe_cost
+### Ferramentas do fluxo oficial
+
+start_planning_session, update_kitchen_profile, register_recipe_candidate, evaluate_recipe_candidate, approve_recipe_candidate, calculate_approved_recipe e get_planning_status. Os parâmetros estão no schema de cada ferramenta (tool_describe). A ordem e as restrições estão na seção FLUXO OFICIAL PERSISTIDO. Toda resposta traz status, candidate_version e next_action.
+
+### calculate_recipe_cost (compatibilidade)
+
+Interface de compatibilidade para a auditoria histórica. Não verifica viabilidade nem aprovação e não substitui evaluate_recipe_candidate nem calculate_approved_recipe.
 
 Responsabilidade: calcular o CMV com estoque real, unidades normalizadas e cotações verificáveis para compras complementares.
 Parâmetros:
@@ -98,7 +208,9 @@ Parâmetros:
 Retorno: recipe_cost (detalhamento por ingrediente), total_cmv_brl, cmv_per_portion_brl, supplemental_purchase_total_brl, budget_limit_brl, budget_remaining_after_purchase_brl e within_budget.
 Uso: calcular custo dos ingredientes consumidos, aproveitamento do estoque, compras complementares, quantidade de pacotes, CMV total, CMV por porção e saldo do orçamento após as compras.
 
-### calculate_delivery_pricing
+### calculate_delivery_pricing (compatibilidade)
+
+Interface de compatibilidade para a auditoria histórica. Não verifica aprovação. Na consultoria, o preço final vem de calculate_approved_recipe, que usa o mesmo calculador e devolve o mesmo delivery_pricing.
 
 Responsabilidade: calcular o CMV e os três cenários de preço (margens de 15%, 25% e 35% sobre o preço bruto) com taxa de delivery de 10%, usando o PricingPolicy, com base de custo explícita.
 Parâmetros: os mesmos de calculate_recipe_cost (recipe_name, requirements, servings, supplemental_quotes) e mais dois opcionais:
@@ -228,7 +340,7 @@ Nunca usar cálculos manuais do LLM como fallback. Não inventar ferramentas MCP
 
 ## 9. Precificação
 
-Chamar calculate_delivery_pricing somente depois do aceite da Dona Maria (seção 10). Ela usa PricingPolicy com taxa padrão de delivery de 10%.
+Chamar calculate_approved_recipe somente depois do aceite explícito da Dona Maria registrado com approve_recipe_candidate (seção 10). O servidor recusa candidatos não aprovados ou alterados após a aprovação. Usa PricingPolicy com taxa padrão de delivery de 10%; os campos de calculation têm o mesmo formato de calculate_delivery_pricing (delivery_pricing.per_portion etc.).
 
 Fórmulas aplicadas pelo motor (referência para explicar, não para recalcular):
 
@@ -271,9 +383,10 @@ Só considerar um prato aprovado quando:
 3. Habilidades culinárias forem compatíveis.
 4. Restrições operacionais forem respeitadas.
 5. Ingredientes e compras estiverem identificados.
-6. Custos e orçamento estiverem validados (calculate_recipe_cost executado e dentro do orçamento, ou excesso informado).
+6. Custos e orçamento estiverem validados (evaluate_recipe_candidate em awaiting_approval, com purchase_plan dentro do orçamento compartilhado).
+7. Dona Maria disser "sim" explicitamente, registrado com approve_recipe_candidate na versão exata do candidato.
 
-Após a aceitação, chamar calculate_delivery_pricing, apresentar CMV e cenários de preço e deixar Dona Maria escolher o preço final.
+Após a aceitação, chamar calculate_approved_recipe, apresentar CMV e cenários de preço e deixar Dona Maria escolher o preço final.
 
 ## 11. Comunicação
 
